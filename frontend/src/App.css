@@ -27,9 +27,15 @@
   line-height: 1.6;
 }
 
-.start-button {
+.buttons-container {
   margin-top: 2rem;
-  padding: 1rem 3rem;
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+}
+
+.start-button {
+  padding: 1rem 2rem;
   font-size: 1.1rem;
   font-weight: 500;
   color: white;
@@ -38,6 +44,7 @@
   border-radius: 6px;
   cursor: pointer;
   transition: background-color 0.2s;
+  width: 200px;
 }
 
 .start-button:hover:not(:disabled) {
@@ -47,6 +54,23 @@
 .start-button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.admin-toggle-button {
+  padding: 1rem 2rem;
+  font-size: 1.1rem;
+  font-weight: 500;
+  color: #ffffff;
+  background: #6c757d;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  width: 200px;
+}
+
+.admin-toggle-button:hover {
+  background: #5a6268;
 }
 
 .chat-container {

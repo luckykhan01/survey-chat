@@ -1,5 +1,6 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 import json
@@ -8,10 +9,12 @@ from datetime import datetime
 from dotenv import load_dotenv
 from openai import OpenAI
 import uuid
+import hashlib
+import secrets
 
 load_dotenv()
 
-app = FastAPI(title="Survey Chat Bot API")
+app = FastAPI(title="Survey Chat Bot")
 
 # CORS настройки
 app.add_middleware(
@@ -25,12 +28,25 @@ app.add_middleware(
 # OpenAI
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# вопросы опроса
+#  система авторизации
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "admin123")  # В продакшене использовать JWT
+security = HTTPBearer()
+
+# хранение сессии (можно использовать Redis/DB)
+sessions: Dict[str, Dict[str, Any]] = {}
+
+#  вопросы опроса
 with open("survey_questions.json", "r", encoding="utf-8") as f:
     SURVEY_QUESTIONS = json.load(f)
 
-# хранение сессии (можно использоватьRedis/DB)
-sessions: Dict[str, Dict[str, Any]] = {}
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class SurveyUpload(BaseModel):
+    questions: List[Dict[str, Any]]
 
 
 class ChatMessage(BaseModel):
@@ -45,6 +61,23 @@ class ChatResponse(BaseModel):
     is_completed: bool = False
 
 
+class AdminStats(BaseModel):
+    total_sessions: int
+    completed_surveys: int
+    active_sessions: int
+    recent_responses: List[Dict]
+
+
+def verify_admin_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Проверка токена пользователя для admin"""
+    if credentials.credentials != ADMIN_TOKEN:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid admin token"
+        )
+    return credentials.credentials
+
+
 def load_survey_questions():
     """Загрузка вопросов из JSON"""
     with open("survey_questions.json", "r", encoding="utf-8") as f:
@@ -52,7 +85,7 @@ def load_survey_questions():
 
 
 def save_survey_result(session_id: str, answers: List[Dict]):
-    """Сохранение результатов в JSON"""
+    """Сохранение результатов опроса в JSON файл"""
     os.makedirs("results", exist_ok=True)
     
     result = {
@@ -90,26 +123,26 @@ def match_answer_to_options(user_answer: str, question: Dict) -> List[str]:
     if question["type"] == "single_choice":
         prompt = f"""Пользователь ответил на вопрос: "{question['question']}"
         
-    Его ответ: "{user_answer}"
+Его ответ: "{user_answer}"
 
-    Доступные варианты ответов:
-    {options_text}
+Доступные варианты ответов:
+{options_text}
 
-    Задача: определи, какой вариант ответа наиболее подходит к ответу пользователя.
-    Верни ТОЛЬКО код варианта (например: A1, B2, и т.д.), без дополнительного текста.
-    Если ответ не подходит ни к одному варианту, верни "UNCLEAR"."""
+Задача: определи, какой вариант ответа наиболее подходит к ответу пользователя.
+Верни ТОЛЬКО код варианта (например: A1, B2, и т.д.), без дополнительного текста.
+Если ответ не подходит ни к одному варианту, верни "UNCLEAR"."""
 
     else:  # multiple_choice
         prompt = f"""Пользователь ответил на вопрос: "{question['question']}"
         
 Его ответ: "{user_answer}"
 
-    Доступные варианты ответов:
-    {options_text}
+Доступные варианты ответов:
+{options_text}
 
-    Задача: определи, какие варианты ответов подходят к ответу пользователя.
-    Верни коды вариантов через запятую (например: C1,C3 или C1,C2,C5), без пробелов и дополнительного текста.
-    Если ответ не подходит ни к одному варианту, верни "UNCLEAR"."""
+Задача: определи, какие варианты ответов подходят к ответу пользователя.
+Верни коды вариантов через запятую (например: C1,C3 или C1,C2,C5), без пробелов и дополнительного текста.
+Если ответ не подходит ни к одному варианту, верни "UNCLEAR"."""
 
     try:
         response = client.chat.completions.create(
@@ -185,6 +218,8 @@ def generate_bot_response(session: Dict, user_message: str) -> str:
         print(f"Error generating response: {e}")
         return "Понял, спасибо!"
 
+
+# Endpoints for users
 
 @app.get("/")
 async def root():
@@ -286,7 +321,148 @@ async def get_questions():
     return load_survey_questions()
 
 
+# Endpoints for ADMIN
+
+@app.post("/admin/login")
+async def admin_login(login_data: LoginRequest):
+    """Авторизация админа"""
+    # просто проверка (можно использовать хеширование)
+    if login_data.username == "admin" and login_data.password == "admin123":
+        return {"token": ADMIN_TOKEN, "message": "Login successful"}
+    else:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+
+@app.get("/admin/stats")
+async def get_admin_stats(token: str = Depends(verify_admin_token)):
+    """Статистика для админ панели"""
+    total_sessions = len(sessions)
+    completed_surveys = len([s for s in sessions.values() if s.get("current_question_index", 0) >= len(load_survey_questions())])
+    active_sessions = total_sessions - completed_surveys
+    
+    # получаем последние ответы
+    recent_responses = []
+    for session_id, session_data in sessions.items():
+        if session_data.get("answers"):
+            recent_responses.append({
+                "session_id": session_id,
+                "started_at": session_data.get("started_at"),
+                "answers_count": len(session_data["answers"]),
+                "last_answer": session_data["answers"][-1] if session_data["answers"] else None
+            })
+    
+    # сортировка по времени начала
+    recent_responses.sort(key=lambda x: x["started_at"], reverse=True)
+    
+    return AdminStats(
+        total_sessions=total_sessions,
+        completed_surveys=completed_surveys,
+        active_sessions=active_sessions,
+        recent_responses=recent_responses[:10]  # ласт 10
+    )
+
+
+@app.get("/admin/responses")
+async def get_all_responses(token: str = Depends(verify_admin_token)):
+    """получить все ответы пользователей"""
+    all_responses = []
+    
+    # читаем сохраненные результаты
+    results_dir = "results"
+    if os.path.exists(results_dir):
+        for filename in os.listdir(results_dir):
+            if filename.startswith("survey_") and filename.endswith(".json"):
+                filepath = os.path.join(results_dir, filename)
+                try:
+                    with open(filepath, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        all_responses.append(data)
+                except Exception as e:
+                    print(f"Error reading {filename}: {e}")
+    
+    # добавляем активные сессии
+    for session_id, session_data in sessions.items():
+        if session_data.get("answers"):
+            all_responses.append({
+                "session_id": session_id,
+                "timestamp": session_data.get("started_at"),
+                "answers": session_data["answers"],
+                "status": "completed" if session_data.get("current_question_index", 0) >= len(load_survey_questions()) else "in_progress"
+            })
+    
+    # сорт по времени
+    all_responses.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+    
+    return {"responses": all_responses}
+
+
+@app.post("/admin/survey/upload")
+async def upload_survey(survey_data: SurveyUpload, token: str = Depends(verify_admin_token)):
+    """Загрузить новый опрос"""
+    try:
+        # валидация общего формата
+        for question in survey_data.questions:
+            if not all(key in question for key in ["id", "question", "type", "options"]):
+                raise HTTPException(status_code=400, detail="Invalid question structure")
+            
+            if question["type"] not in ["single_choice", "multiple_choice"]:
+                raise HTTPException(status_code=400, detail="Invalid question type")
+        
+        # сохраняем новый опрос
+        with open("survey_questions.json", "w", encoding="utf-8") as f:
+            json.dump(survey_data.questions, f, ensure_ascii=False, indent=2)
+        
+        return {"message": "Survey uploaded successfully", "questions_count": len(survey_data.questions)}
+    
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error uploading survey: {str(e)}")
+
+
+@app.get("/admin/survey/current")
+async def get_current_survey(token: str = Depends(verify_admin_token)):
+    """Получить текущий опрос"""
+    return load_survey_questions()
+
+
+@app.get("/admin/export/csv")
+async def export_csv(token: str = Depends(verify_admin_token)):
+    """Экспорт результатов в CSV"""
+    import csv
+    import io
+    
+    # собираем все данные
+    all_data = []
+    results_dir = "results"
+    
+    if os.path.exists(results_dir):
+        for filename in os.listdir(results_dir):
+            if filename.startswith("survey_") and filename.endswith(".json"):
+                filepath = os.path.join(results_dir, filename)
+                try:
+                    with open(filepath, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        for answer in data.get("answers", []):
+                            all_data.append({
+                                "session_id": data["session_id"],
+                                "timestamp": data["timestamp"],
+                                "question_id": answer["question_id"],
+                                "question": answer["question"],
+                                "answer_codes": ",".join(answer["answer_codes"]),
+                                "original_answer": answer["original_answer"]
+                            })
+                except Exception as e:
+                    print(f"Error reading {filename}: {e}")
+    
+    # создать CSV
+    output = io.StringIO()
+    if all_data:
+        writer = csv.DictWriter(output, fieldnames=all_data[0].keys())
+        writer.writeheader()
+        writer.writerows(all_data)
+    
+    return {"csv_data": output.getvalue()}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-

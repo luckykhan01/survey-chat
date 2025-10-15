@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
+import AdminPanel from './AdminPanel'
 import './App.css'
 
 const API_URL = 'http://localhost:8000'
 
 function App() {
+  const [isAdminMode, setIsAdminMode] = useState(false)
   const [sessionId, setSessionId] = useState(null)
   const [messages, setMessages] = useState([])
   const [inputMessage, setInputMessage] = useState('')
@@ -96,6 +98,11 @@ function App() {
     startSurvey()
   }
 
+  // Переключение в админ режим
+  if (isAdminMode) {
+    return <AdminPanel />
+  }
+
   if (!sessionId) {
     return (
       <div className="welcome-screen">
@@ -103,13 +110,21 @@ function App() {
           <h1>Чат-бот Социологического Опроса</h1>
           <p>Добро пожаловать! ИИ проведет с вами короткий опрос.</p>
           <p>Вы можете отвечать своими словами, и ИИ постарается вас понять.</p>
-          <button 
-            className="start-button" 
-            onClick={startSurvey}
-            disabled={isLoading}
-          >
-            {isLoading ? 'Загрузка...' : 'Начать опрос'}
-          </button>
+          <div className="buttons-container">
+            <button 
+              className="start-button" 
+              onClick={startSurvey}
+              disabled={isLoading}
+            >
+              {isLoading ? 'Загрузка...' : 'Начать опрос'}
+            </button>
+            <button 
+              className="admin-toggle-button" 
+              onClick={() => setIsAdminMode(true)}
+            >
+              Admin
+            </button>
+          </div>
         </div>
       </div>
     )
