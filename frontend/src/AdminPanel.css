@@ -266,6 +266,79 @@
   background: #218838;
 }
 
+/* Версии опросов */
+.versions-management {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.versions-list h3 {
+  color: #ffffff;
+  margin-bottom: 1rem;
+}
+
+.versions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.version-card {
+  background: #2a2a2a;
+  border: 1px solid #404040;
+  border-radius: 8px;
+  padding: 1rem;
+  transition: border-color 0.2s;
+}
+
+.version-card:hover {
+  border-color: #4a9eff;
+}
+
+.version-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.version-header h4 {
+  color: #ffffff;
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.version-date {
+  color: #888;
+  font-size: 0.9rem;
+}
+
+.version-info {
+  margin-bottom: 1rem;
+}
+
+.version-info p {
+  color: #cccccc;
+  margin: 0.25rem 0;
+  font-size: 0.9rem;
+}
+
+.load-version-button {
+  background: #4a9eff;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  width: 100%;
+}
+
+.load-version-button:hover {
+  background: #357abd;
+}
+
 .json-button {
   background: #17a2b8;
 }

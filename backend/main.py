@@ -573,7 +573,7 @@ async def get_all_responses(token: str = Depends(verify_admin_token)):
 
 @app.post("/admin/survey/upload")
 async def upload_survey(survey_data: SurveyUpload, token: str = Depends(verify_admin_token)):
-    """Загрузить новый опрос"""
+    """Загрузить новый опрос с сохранением предыдущей версии"""
     try:
         # валидация общего формата
         for question in survey_data.questions:
@@ -583,11 +583,36 @@ async def upload_survey(survey_data: SurveyUpload, token: str = Depends(verify_a
             if question["type"] not in ["single_choice", "multiple_choice"]:
                 raise HTTPException(status_code=400, detail="Invalid question type")
         
+        # сохраняем текущий опрос как версию
+        current_survey_path = "survey_questions.json"
+        previous_version_saved = False
+        
+        if os.path.exists(current_survey_path):
+            try:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                version_path = f"survey_versions/survey_v{timestamp}.json"
+                
+                # копируем текущий опрос в версии
+                with open(current_survey_path, "r", encoding="utf-8") as current_file:
+                    current_data = json.load(current_file)
+                
+                with open(version_path, "w", encoding="utf-8") as version_file:
+                    json.dump(current_data, version_file, ensure_ascii=False, indent=2)
+                
+                previous_version_saved = True
+            except Exception as e:
+                print(f"Error saving previous version: {e}")
+                previous_version_saved = False
+        
         # сохраняем новый опрос
         with open("survey_questions.json", "w", encoding="utf-8") as f:
             json.dump(survey_data.questions, f, ensure_ascii=False, indent=2)
         
-        return {"message": "Survey uploaded successfully", "questions_count": len(survey_data.questions)}
+        return {
+            "message": "Survey uploaded successfully", 
+            "questions_count": len(survey_data.questions),
+            "previous_version_saved": previous_version_saved
+        }
     
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error uploading survey: {str(e)}")
@@ -597,6 +622,56 @@ async def upload_survey(survey_data: SurveyUpload, token: str = Depends(verify_a
 async def get_current_survey(token: str = Depends(verify_admin_token)):
     """Получить текущий опрос"""
     return load_survey_questions()
+
+
+@app.get("/admin/survey/versions")
+async def get_survey_versions(token: str = Depends(verify_admin_token)):
+    """Получить список всех версий опросов"""
+    versions = []
+    versions_dir = "survey_versions"
+    
+    if os.path.exists(versions_dir):
+        for filename in os.listdir(versions_dir):
+            if filename.startswith("survey_v") and filename.endswith(".json"):
+                filepath = os.path.join(versions_dir, filename)
+                try:
+                    with open(filepath, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    
+                    # извлекаем дату из имени файла
+                    timestamp_str = filename.replace("survey_v", "").replace(".json", "")
+                    try:
+                        timestamp = datetime.strptime(timestamp_str, "%Y%m%d_%H%M%S")
+                        versions.append({
+                            "filename": filename,
+                            "timestamp": timestamp.isoformat(),
+                            "questions_count": len(data),
+                            "first_question": data[0]["question"] if data else "Нет вопросов"
+                        })
+                    except ValueError:
+                        continue
+                except Exception as e:
+                    print(f"Error reading {filename}: {e}")
+    
+    # сортируем по времени (новые сверху)
+    versions.sort(key=lambda x: x["timestamp"], reverse=True)
+    return {"versions": versions}
+
+
+@app.get("/admin/survey/versions/{filename}")
+async def get_survey_version(filename: str, token: str = Depends(verify_admin_token)):
+    """Получить конкретную версию опроса"""
+    filepath = os.path.join("survey_versions", filename)
+    
+    if not os.path.exists(filepath):
+        raise HTTPException(status_code=404, detail="Version not found")
+    
+    try:
+        with open(filepath, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error reading version: {str(e)}")
 
 
 @app.get("/admin/export/csv")

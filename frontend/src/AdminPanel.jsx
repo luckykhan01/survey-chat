@@ -13,6 +13,8 @@ function AdminPanel() {
   const [activeTab, setActiveTab] = useState('dashboard')
   const [loginData, setLoginData] = useState({ username: '', password: '' })
   const [surveyJson, setSurveyJson] = useState('')
+  const [uploadMessage, setUploadMessage] = useState('')
+  const [surveyVersions, setSurveyVersions] = useState([])
 
 
   const handleLogin = async (e) => {
@@ -42,6 +44,7 @@ function AdminPanel() {
       loadStats()
       loadResponses()
       loadCurrentSurvey()
+      loadSurveyVersions()
     }
   }, [isLoggedIn])
 
@@ -64,6 +67,28 @@ function AdminPanel() {
       setResponses(response.data.responses)
     } catch (error) {
       console.error('Error loading responses:', error)
+    }
+  }
+
+  const loadSurveyVersions = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/admin/survey/versions`, 
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+      setSurveyVersions(response.data.versions)
+    } catch (error) {
+      console.error('Error loading versions:', error)
+    }
+  }
+
+  const loadSurveyVersion = async (filename) => {
+    try {
+      const response = await axios.get(`${API_URL}/admin/survey/versions/${filename}`, 
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+      setSurveyJson(JSON.stringify(response.data, null, 2))
+    } catch (error) {
+      alert('Ошибка загрузки версии: ' + error.response?.data?.detail)
     }
   }
 
@@ -135,9 +160,10 @@ function AdminPanel() {
         { headers: { Authorization: `Bearer ${token}` } }
       )
       
-      alert(`Опрос успешно загружен! Вопросов: ${response.data.questions_count}`)
+      alert(`Опрос успешно загружен! Вопросов: ${response.data.questions_count}. Предыдущая версия сохранена: ${response.data.previous_version_saved ? 'Да' : 'Нет'}`)
       setSurveyJson('')
       loadCurrentSurvey() // Перезагружаем текущий опрос
+      loadSurveyVersions() // Загружаем список версий
     } catch (error) {
       if (error.response?.data?.detail) {
         alert('Ошибка загрузки: ' + error.response.data.detail)
@@ -205,12 +231,18 @@ function AdminPanel() {
         >
           Ответы
         </button>
-        <button 
-          className={activeTab === 'survey' ? 'active' : ''}
-          onClick={() => setActiveTab('survey')}
-        >
-          Управление опросом
-        </button>
+            <button 
+              className={activeTab === 'survey' ? 'active' : ''} 
+              onClick={() => setActiveTab('survey')}
+            >
+              Управление опросом
+            </button>
+            <button 
+              className={activeTab === 'versions' ? 'active' : ''} 
+              onClick={() => setActiveTab('versions')}
+            >
+              Версии опросов
+            </button>
       </nav>
 
       <main className="admin-content">
@@ -348,6 +380,42 @@ function AdminPanel() {
               <button className="upload-button" onClick={uploadSurvey}>
                 Загрузить опрос
               </button>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'versions' && (
+          <div className="versions-management">
+            <h2>Версии опросов</h2>
+            
+            <div className="versions-list">
+              <h3>Сохраненные версии</h3>
+              {surveyVersions.length === 0 ? (
+                <p>Нет сохраненных версий</p>
+              ) : (
+                <div className="versions-grid">
+                  {surveyVersions.map((version, index) => (
+                    <div key={index} className="version-card">
+                      <div className="version-header">
+                        <h4>Версия {index + 1}</h4>
+                        <span className="version-date">
+                          {new Date(version.timestamp).toLocaleString('ru-RU')}
+                        </span>
+                      </div>
+                      <div className="version-info">
+                        <p><strong>Вопросов:</strong> {version.questions_count}</p>
+                        <p><strong>Первый вопрос:</strong> {version.first_question}</p>
+                      </div>
+                      <button 
+                        className="load-version-button"
+                        onClick={() => loadSurveyVersion(version.filename)}
+                      >
+                        Загрузить в редактор
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}
