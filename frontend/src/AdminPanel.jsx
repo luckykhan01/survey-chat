@@ -12,6 +12,7 @@ function AdminPanel() {
   const [currentSurvey, setCurrentSurvey] = useState([])
   const [activeTab, setActiveTab] = useState('dashboard')
   const [loginData, setLoginData] = useState({ username: '', password: '' })
+  const [surveyJson, setSurveyJson] = useState('')
 
 
   const handleLogin = async (e) => {
@@ -118,6 +119,31 @@ function AdminPanel() {
       window.URL.revokeObjectURL(url)
     } catch (error) {
       alert('Ошибка экспорта: ' + error.response?.data?.detail)
+    }
+  }
+
+  const uploadSurvey = async () => {
+    if (!surveyJson.trim()) {
+      alert('Вставьте JSON с вопросами опроса')
+      return
+    }
+
+    try {
+      const questions = JSON.parse(surveyJson)
+      const response = await axios.post(`${API_URL}/admin/survey/upload`, 
+        { questions },
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+      
+      alert(`Опрос успешно загружен! Вопросов: ${response.data.questions_count}`)
+      setSurveyJson('')
+      loadCurrentSurvey() // Перезагружаем текущий опрос
+    } catch (error) {
+      if (error.response?.data?.detail) {
+        alert('Ошибка загрузки: ' + error.response.data.detail)
+      } else {
+        alert('Ошибка: Неверный формат JSON')
+      }
     }
   }
 
@@ -313,11 +339,13 @@ function AdminPanel() {
             <div className="upload-section">
               <h3>Загрузить новый опрос</h3>
               <textarea
-                placeholder="Вставьте JSON с вопросами..."
+                placeholder="Вставьте JSON с вопросами опроса..."
                 className="json-textarea"
                 rows="10"
+                value={surveyJson}
+                onChange={(e) => setSurveyJson(e.target.value)}
               />
-              <button className="upload-button">
+              <button className="upload-button" onClick={uploadSurvey}>
                 Загрузить опрос
               </button>
             </div>
