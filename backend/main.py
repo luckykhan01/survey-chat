@@ -115,9 +115,14 @@ def match_answer_to_options(user_answer: str, question: Dict) -> List[str]:
     """
     Использование API для сопоставления ответа пользователя с вариантами
     """
+    # проверяем числовые ответы и ключевые слова
+    numeric_result = check_numeric_answer(user_answer, question)
+    if numeric_result:
+        return numeric_result
+    
     lines = []
-    for opt in question["options"]:
-        lines.append(f"{opt['code']}: {opt['text']}")
+    for i, opt in enumerate(question["options"], 1):
+        lines.append(f"{i}) {opt['code']}: {opt['text']}")
     options_text = "\n".join(lines)
     
     if question["type"] == "single_choice":
@@ -125,10 +130,15 @@ def match_answer_to_options(user_answer: str, question: Dict) -> List[str]:
         
 Его ответ: "{user_answer}"
 
-Доступные варианты ответов:
+Доступные варианты ответов (с номерами):
 {options_text}
 
 Задача: определи, какой вариант ответа наиболее подходит к ответу пользователя.
+Учитывай:
+- Числовые ответы (1, 2, 3, "первое", "второе", "третий")
+- Ключевые слова из вариантов
+- Синонимы и похожие фразы
+
 Верни ТОЛЬКО код варианта (например: A1, B2, и т.д.), без дополнительного текста.
 Если ответ не подходит ни к одному варианту, верни "UNCLEAR"."""
 
@@ -137,10 +147,15 @@ def match_answer_to_options(user_answer: str, question: Dict) -> List[str]:
         
 Его ответ: "{user_answer}"
 
-Доступные варианты ответов:
+Доступные варианты ответов (с номерами):
 {options_text}
 
 Задача: определи, какие варианты ответов подходят к ответу пользователя.
+Учитывай:
+- Числовые ответы (1,2,3 или "первое и второе")
+- Ключевые слова из вариантов
+- Синонимы и похожие фразы
+
 Верни коды вариантов через запятую (например: C1,C3 или C1,C2,C5), без пробелов и дополнительного текста.
 Если ответ не подходит ни к одному варианту, верни "UNCLEAR"."""
 
@@ -148,7 +163,7 @@ def match_answer_to_options(user_answer: str, question: Dict) -> List[str]:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "Ты помощник для анализа ответов в социологическом опросе. Твоя задача - точно сопоставить ответ пользователя с предложенными вариантами."},
+                {"role": "system", "content": "Ты помощник для анализа ответов в социологическом опросе. Твоя задача - точно сопоставить ответ пользователя с предложенными вариантами. Учитывай числовые ответы и ключевые слова."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.3,
@@ -172,6 +187,70 @@ def match_answer_to_options(user_answer: str, question: Dict) -> List[str]:
         return []
 
 
+def check_numeric_answer(user_answer: str, question: Dict) -> List[str]:
+    """
+    Проверяем числовые ответы и ключевые слова для выбора вариантов
+    """
+    answer_lower = user_answer.lower().strip()
+    
+    # числовые ответы
+    import re
+    
+    # ищем числа в ответе
+    numbers = re.findall(r'\d+', answer_lower)
+    
+    if numbers:
+        selected_codes = []
+        for num_str in numbers:
+            try:
+                num = int(num_str)
+                if 1 <= num <= len(question["options"]):
+                    selected_codes.append(question["options"][num - 1]["code"])
+            except (ValueError, IndexError):
+                continue
+        
+        if selected_codes:
+            return selected_codes
+    
+    # проверка ключевого слова
+    ordinal_words = {
+        "первое": 1, "первый": 1, "первая": 1, "первое": 1,
+        "второе": 2, "второй": 2, "вторая": 2, "второе": 2,
+        "третье": 3, "третий": 3, "третья": 3, "третье": 3,
+        "четвертое": 4, "четвертый": 4, "четвертая": 4, "четвертое": 4,
+        "пятое": 5, "пятый": 5, "пятая": 5, "пятое": 5,
+        "последнее": -1, "последний": -1, "последняя": -1, "последнее": -1
+    }
+    
+    for word, index in ordinal_words.items():
+        if word in answer_lower:
+            if index == -1:  # последнее
+                selected_codes = [question["options"][-1]["code"]]
+            else:
+                if 1 <= index <= len(question["options"]):
+                    selected_codes = [question["options"][index - 1]["code"]]
+                else:
+                    continue
+            
+            # для multiple_choice проверяем, есть ли еще числа
+            if question["type"] == "multiple_choice":
+                # другие числа в ответе
+                other_numbers = re.findall(r'\d+', answer_lower.replace(word, ""))
+                for num_str in other_numbers:
+                    try:
+                        num = int(num_str)
+                        if 1 <= num <= len(question["options"]):
+                            code = question["options"][num - 1]["code"]
+                            if code not in selected_codes:
+                                selected_codes.append(code)
+                    except (ValueError, IndexError):
+                        continue
+            
+            return selected_codes
+    
+    return []
+
+
 def generate_bot_response(session: Dict, user_message: str) -> str:
     """Генерация ответа бота с использованием API"""
     current_question = get_current_question(session)
@@ -187,36 +266,44 @@ def generate_bot_response(session: Dict, user_message: str) -> str:
         
     prompt = f"""Ты - дружелюбный ассистент, который проводит социологический опрос.
 
-Текущий вопрос: "{current_question['question']}"
-
-Варианты ответов:
-{options_text}
-
 Пользователь только что ответил: "{user_message}"
 
 Твоя задача:
-1. Если это первый вопрос сессии и пользователь только поздоровался - поприветствуй его и задай первый вопрос
-2. Если пользователь дал ответ на вопрос - поблагодари его кратко и естественно
-3. Будь дружелюбным и лаконичным
+1. Поблагодари пользователя за ответ кратко и естественно
+2. НЕ задавай никаких вопросов - вопросы задает система автоматически
+3. НЕ приветствуй - это уже сделано в начале опроса
+4. Будь дружелюбным и лаконичным
 
-Ответь пользователю (1-2 предложения максимум):"""
+Ответь пользователю ТОЛЬКО благодарностью (1 предложение максимум):"""
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "Ты дружелюбный ассистент для проведения опросов. Отвечай кратко и по-русски."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.7,
-            max_tokens=150
-        )
+             model="gpt-4o-mini",
+             messages=[
+                 {"role": "system", "content": "Ты дружелюбный ассистент для проведения опросов. Твоя ЕДИНСТВЕННАЯ задача - благодарить пользователя за ответы. НЕ задавай вопросы, НЕ приветствуй, НЕ спрашивай следующий вопрос. Только благодарность."},
+                 {"role": "user", "content": prompt}
+             ],
+             temperature=0.3,
+             max_tokens=50
+         )
         
-        return response.choices[0].message.content.strip()
+        bot_response = response.choices[0].message.content.strip()
+
+        unwanted_phrases = [
+            "следующий вопрос", "следующий", "теперь", "давайте", "перейдем",
+            "привет", "здравствуйте", "добро пожаловать", "начнем",
+            "?", "вопрос", "спросить", "расскажите", "какой", "как", "что"
+        ]
+        
+        for phrase in unwanted_phrases:
+            if phrase in bot_response.lower():
+                return "Спасибо за ответ!"
+        
+        return bot_response
     
     except Exception as e:
         print(f"Error generating response: {e}")
-        return "Понял, спасибо!"
+        return "Спасибо за ответ!"
 
 
 # Endpoints for users
@@ -257,13 +344,13 @@ async def start_chat():
 async def start_chat_with_session(session_id: str):
     """Начать сессию с конкретным ID"""
     
-    # Проверяем, существует ли уже сессия
+    # проверяем, существует ли уже сессия
     if session_id in sessions:
         session = sessions[session_id]
         current_question = get_current_question(session)
         
         if current_question:
-            # Если это первый вопрос (индекс 0), показываем приветствие
+            # если это первый вопрос (индекс 0), показываем приветствие
             if session.get("current_question_index", 0) == 0:
                 welcome_message = f"""Добрый день! Я бот для проведения социологического опроса. 
                 
@@ -341,11 +428,19 @@ async def send_message(chat_message: ChatMessage):
             is_completed=False
         )
     
-    # ответ сохраняется
+    # получаем текст выбранных ответов
+    selected_texts = []
+    for code in matched_codes:
+        for option in current_question["options"]:
+            if option["code"] == code:
+                selected_texts.append(option["text"])
+                break
+    
     answer_record = {
         "question_id": current_question["id"],
         "question": current_question["question"],
         "answer_codes": matched_codes,
+        "answer_texts": selected_texts,
         "original_answer": chat_message.message
     }
     session["answers"].append(answer_record)
@@ -445,10 +540,28 @@ async def get_all_responses(token: str = Depends(verify_admin_token)):
     # добавляем активные сессии
     for session_id, session_data in sessions.items():
         if session_data.get("answers"):
+            # обрабатываем ответы для активных сессий
+            processed_answers = []
+            for answer in session_data["answers"]:
+                processed_answer = answer.copy()
+                # если нет answer_texts, добавляем их
+                if "answer_texts" not in processed_answer:
+                    questions = load_survey_questions()
+                    question = next((q for q in questions if q["id"] == answer["question_id"]), None)
+                    if question:
+                        selected_texts = []
+                        for code in answer["answer_codes"]:
+                            for option in question["options"]:
+                                if option["code"] == code:
+                                    selected_texts.append(option["text"])
+                                    break
+                        processed_answer["answer_texts"] = selected_texts
+                processed_answers.append(processed_answer)
+            
             all_responses.append({
                 "session_id": session_id,
                 "timestamp": session_data.get("started_at"),
-                "answers": session_data["answers"],
+                "answers": processed_answers,
                 "status": "completed" if session_data.get("current_question_index", 0) >= len(load_survey_questions()) else "in_progress"
             })
     
@@ -510,6 +623,7 @@ async def export_csv(token: str = Depends(verify_admin_token)):
                                 "question_id": answer["question_id"],
                                 "question": answer["question"],
                                 "answer_codes": ",".join(answer["answer_codes"]),
+                                "answer_texts": ",".join(answer.get("answer_texts", [])),
                                 "original_answer": answer["original_answer"]
                             })
                 except Exception as e:
@@ -523,6 +637,37 @@ async def export_csv(token: str = Depends(verify_admin_token)):
         writer.writerows(all_data)
     
     return {"csv_data": output.getvalue()}
+
+
+@app.get("/admin/export/json")
+async def export_json(token: str = Depends(verify_admin_token)):
+    """Экспорт файлов в JSON"""
+    all_responses = []
+    results_dir = "results"
+    
+    if os.path.exists(results_dir):
+        for filename in os.listdir(results_dir):
+            if filename.startswith("survey_") and filename.endswith(".json"):
+                filepath = os.path.join(results_dir, filename)
+                try:
+                    with open(filepath, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        all_responses.append(data)
+                except Exception as e:
+                    print(f"Error reading {filename}: {e}")
+    
+    for session_id, session_data in sessions.items():
+        if session_data.get("answers"):
+            all_responses.append({
+                "session_id": session_id,
+                "timestamp": session_data.get("started_at"),
+                "answers": session_data["answers"],
+                "status": "completed" if session_data.get("current_question_index", 0) >= len(load_survey_questions()) else "in_progress"
+            })
+    
+    all_responses.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+    
+    return {"json_data": json.dumps(all_responses, ensure_ascii=False, indent=2)}
 
 
 if __name__ == "__main__":

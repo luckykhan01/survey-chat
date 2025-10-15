@@ -102,6 +102,25 @@ function AdminPanel() {
     }
   }
 
+  const exportJSON = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/admin/export/json`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      
+      // создаем и скачиваем файл
+      const blob = new Blob([response.data.json_data], { type: 'application/json' })
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `survey_results_${new Date().toISOString().split('T')[0]}.json`
+      a.click()
+      window.URL.revokeObjectURL(url)
+    } catch (error) {
+      alert('Ошибка экспорта: ' + error.response?.data?.detail)
+    }
+  }
+
   if (!isLoggedIn) {
     return (
       <div className="admin-login">
@@ -220,9 +239,14 @@ function AdminPanel() {
             </div>
 
             <div className="export-section">
-              <button onClick={exportCSV} className="export-button">
-                Экспорт в CSV
-              </button>
+              <div className="export-buttons">
+                <button onClick={exportCSV} className="export-button csv-button">
+                  Экспорт в CSV
+                </button>
+                <button onClick={exportJSON} className="export-button json-button">
+                  Экспорт в JSON
+                </button>
+              </div>
             </div>
           </div>
         )}
