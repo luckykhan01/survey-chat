@@ -253,6 +253,68 @@ async def start_chat():
     )
 
 
+@app.post("/chat/start/{session_id}")
+async def start_chat_with_session(session_id: str):
+    """Начать сессию с конкретным ID"""
+    
+    # Проверяем, существует ли уже сессия
+    if session_id in sessions:
+        session = sessions[session_id]
+        current_question = get_current_question(session)
+        
+        if current_question:
+            # Если это первый вопрос (индекс 0), показываем приветствие
+            if session.get("current_question_index", 0) == 0:
+                welcome_message = f"""Добрый день! Я бот для проведения социологического опроса. 
+                
+Сейчас я задам вам несколько вопросов. Вы можете отвечать своими словами, а я постараюсь понять ваш ответ.
+
+Начнем! {current_question['question']}"""
+                
+                return ChatResponse(
+                    session_id=session_id,
+                    message=welcome_message,
+                    current_question=current_question,
+                    is_completed=False
+                )
+            else:
+                return ChatResponse(
+                    session_id=session_id,
+                    message=f"Продолжаем опрос! {current_question['question']}",
+                    current_question=current_question,
+                    is_completed=False
+                )
+        else:
+            return ChatResponse(
+                session_id=session_id,
+                message="Опрос уже завершен. Начните новый опрос.",
+                current_question=None,
+                is_completed=True
+            )
+    
+    # Создаем новую сессию с указанным ID
+    sessions[session_id] = {
+        "current_question_index": 0,
+        "answers": [],
+        "started_at": datetime.now().isoformat()
+    }
+    
+    first_question = get_current_question(sessions[session_id])
+    
+    welcome_message = f"""Добрый день! Я бот для проведения социологического опроса. 
+    
+Сейчас я задам вам несколько вопросов. Вы можете отвечать своими словами, а я постараюсь понять ваш ответ.
+
+Начнем! {first_question['question']}"""
+    
+    return ChatResponse(
+        session_id=session_id,
+        message=welcome_message,
+        current_question=first_question,
+        is_completed=False
+    )
+
+
 @app.post("/chat/message", response_model=ChatResponse)
 async def send_message(chat_message: ChatMessage):
     """Обработка сообщения пользователя"""

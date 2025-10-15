@@ -9,9 +9,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "axios": "^1.7.7",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "axios": "^1.7.7"
+    "react-router-dom": "^7.9.4"
   },
   "devDependencies": {
     "@types/react": "^18.3.11",
@@ -20,4 +21,3 @@
     "vite": "^5.4.10"
   }
 }
-
