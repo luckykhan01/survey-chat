@@ -83,10 +83,13 @@
 .admin-header {
   background: #2a2a2a;
   padding: 1rem 2rem;
-  border-bottom: 1px solid #404040;
+  border: 1px solid #404040;
+  border-radius: 8px;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  max-width: 1200px;
+  margin: 0 auto 2rem auto;
 }
 
 .admin-header h1 {
@@ -112,9 +115,12 @@
 .admin-nav {
   background: #2a2a2a;
   padding: 0 2rem;
-  border-bottom: 1px solid #404040;
+  border: 1px solid #404040;
+  border-radius: 8px;
   display: flex;
   gap: 0;
+  max-width: 1200px;
+  margin: 0 auto 2rem auto;
 }
 
 .admin-nav button {
@@ -138,7 +144,7 @@
 }
 
 .admin-content {
-  padding: 2rem;
+  padding: 0 2rem 2rem 2rem;
   max-width: 1200px;
   margin: 0 auto;
 }

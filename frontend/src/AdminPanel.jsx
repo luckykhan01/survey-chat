@@ -140,12 +140,12 @@ function AdminPanel() {
 
   return (
     <div className="admin-panel">
-      <header className="admin-header">
+      <div className="admin-header">
         <h1>Admin</h1>
         <button onClick={handleLogout} className="logout-button">
           Выйти
         </button>
-      </header>
+      </div>
 
       <nav className="admin-nav">
         <button 
